@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: baka-ocr
+    env: python
+    region: singapore
+    buildCommand: cd ocr && pip install -r requirements.txt
+    startCommand: cd ocr && gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    plan: free
+
+  - type: web
+    name: baka-bot
+    env: go
+    region: singapore
+    buildCommand: cd bot && go build -o bot main.go
+    startCommand: cd bot && ./bot
+    plan: free
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: REPO_OWNER
+        sync: false
+      - key: REPO_NAME
+        sync: false
