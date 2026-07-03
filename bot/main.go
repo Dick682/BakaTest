@@ -861,7 +861,7 @@ func staUpdater() {
 // ==================== BOT COMMAND HANDLERS ====================
 func registerHandlers(b *telego.Bot) {
 	botr = b
-	b.HandleMessage(func(ctx *telego.Bot, msg telego.Message) {
+	b.OnMessage(func(ctx *telego.Bot, msg telego.Message) {
 		if msg.Text == "" {
 			return
 		}
@@ -869,7 +869,7 @@ func registerHandlers(b *telego.Bot) {
 		if len(args) == 0 {
 			return
 		}
-		chatID := msg.Chat.ChatID()
+		chatID := msg.Chat.ChatID().ID
 		switch args[0] {
 		case "/start":
 			botr.SendMessage(&telego.SendMessageParams{
