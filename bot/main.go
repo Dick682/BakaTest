@@ -30,7 +30,7 @@ var (
 	ADMIN_ID     = "5376101564"
 	CONCURRENCY  = 5000
 	WEB_PORT     = "8080"
-	OCR_SERVER   = "http://127.0.0.1:5000"
+	OCR_SERVER   = "https://baka-ocr.onrender.com"
 )
 
 // ==================== HEADER POOLS ====================
