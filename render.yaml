@@ -18,6 +18,8 @@ services:
     startCommand: cd bot && ./bot
     plan: free
     envVars:
+      - key: GO_VERSION
+        value: "1.21"
       - key: BOT_TOKEN
         sync: false
       - key: GITHUB_TOKEN
