@@ -6,6 +6,9 @@ services:
     buildCommand: cd ocr && pip install -r requirements.txt
     startCommand: cd ocr && gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
     plan: free
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.9.18"
 
   - type: web
     name: baka-bot
