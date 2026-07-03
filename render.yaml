@@ -14,7 +14,7 @@ services:
     name: baka-bot
     env: go
     region: singapore
-    buildCommand: cd bot && go build -o bot main.go
+    buildCommand: cd bot && go mod tidy && go build -o bot main.go
     startCommand: cd bot && ./bot
     plan: free
     envVars:
