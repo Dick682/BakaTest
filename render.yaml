@@ -8,7 +8,7 @@ services:
     plan: free
     envVars:
       - key: PYTHON_VERSION
-        value: "3.9.18"
+        value: "3.11.0"
 
   - type: web
     name: baka-bot
