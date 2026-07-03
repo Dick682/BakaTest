@@ -1,2 +1,0 @@
-# BakaTest
-Just for testing 
