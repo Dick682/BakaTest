@@ -1,6 +1,6 @@
 module baka-bot
 
-go 1.21
+go 1.22
 
 require github.com/mymmrac/telego v0.31.3
 
