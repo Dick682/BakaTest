@@ -339,7 +339,7 @@ func solveCaptcha(imgBytes []byte) (string, error) {
 // ==================== RUIJIE API CALLS ====================
 func getSessionID(sessionURL, prev string) (string, error) {
 	mac := getRandomMAC()
-	u := regexp.MustCompile(`(?<=mac=)[^&]+`).ReplaceAllString(sessionURL, mac)
+	u := regexp.MustCompile(`mac=[^&]+`).ReplaceAllString(sessionURL, "mac="+mac)
 	req, _ := http.NewRequest("GET", u, nil)
 	applyRandomHeaders(req, u)
 	client := &http.Client{
